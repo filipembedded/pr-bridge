@@ -1,5 +1,7 @@
 # pr-bridge
 
+Version 1.0.0
+
 > Export GitHub PR review comments to an AI-friendly Markdown file — so your AI coding assistant gets the full context without you having to copy-paste anything.
 
 ## The Problem
@@ -15,10 +17,24 @@ When working with an AI assistant (like GitHub Copilot) on a pull request, expla
 
 ## Requirements
 
-- [uv](https://docs.astral.sh/uv/) — modern Python package manager
 - [GitHub CLI (`gh`)](https://cli.github.com/) — installed and authenticated (`gh auth login`)
+- [uv](https://docs.astral.sh/uv/) — modern Python package manager (only needed for installation from Github)*
 
 ## Installation
+
+### From PyPI (recommended)
+
+```bash
+pip install pr-bridge
+```
+
+Or with `uv`:
+
+```bash
+uv tool install pr-bridge
+```
+
+### From GitHub
 
 ```bash
 # Install directly from GitHub
