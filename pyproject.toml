@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pr-bridge"
+version = "0.1.0"
+description = "Export GitHub PR review comments to AI-friendly Markdown"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.11"
+authors = [
+    { name = "Filip Stojanovic", email = "filipembedded@gmail.com" },
+]
+keywords = ["github", "pull-request", "code-review", "ai", "developer-tools"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Version Control :: Git",
+    "Topic :: Utilities",
+]
+# No third-party dependencies - only stdlib + gh CLI (external binary)
+dependencies = []
+
+[project.scripts]
+pr-bridge = "pr_bridge.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/filipembedded/pr-bridge"
+"Bug Tracker" = "https://github.com/filipembedded/pr-bridge/issues"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["pr_bridge*"]
