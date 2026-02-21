@@ -51,18 +51,18 @@ def cmd_fetch(args: argparse.Namespace) -> None:
     print(f"Fetching PR #{pr_number} from {owner}/{repo}...")
 
     pr_info = fetch_pr_info(owner, repo, pr_number)
-    print(f"  ✓ PR info: \"{pr_info.title}\"")
+    print(f"  - PR info: \"{pr_info.title}\"")
 
     review_comments = fetch_review_comments(owner, repo, pr_number)
-    print(f"  ✓ Inline review comments: {len(review_comments)}")
+    print(f"  - Inline review comments: {len(review_comments)}")
 
     issue_comments: list[dict] = []
     if not args.no_general:
         issue_comments = fetch_issue_comments(owner, repo, pr_number)
-        print(f"  ✓ General PR comments: {len(issue_comments)}")
+        print(f"  - General PR comments: {len(issue_comments)}")
 
     reviews = fetch_reviews(owner, repo, pr_number)
-    print(f"  ✓ Review summaries: {len(reviews)}")
+    print(f"  - Review summaries: {len(reviews)}")
 
     print(f"  Formatting as Markdown (filter={args.filter})...")
     markdown = format_pr(
@@ -75,7 +75,7 @@ def cmd_fetch(args: argparse.Namespace) -> None:
 
     output_path = _resolve_output_path(args.output, owner, repo, pr_number)
     output_path.write_text(markdown, encoding="utf-8")
-    print(f"\n✅ Saved to: {output_path}")
+    print(f"\n Saved to: {output_path}")
     print(f"   Threads shown: {markdown.count('### Thread')}")
 
 
