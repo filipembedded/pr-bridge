@@ -34,8 +34,10 @@ class ReviewComment:
     created_at: str
     html_url: str
     in_reply_to_id: Optional[int]
-    is_suggestion: bool  # body contains a ```suggestion block
-    author_association: str  # MEMBER, CONTRIBUTOR, OWNER, NONE …
+    is_suggestion: bool
+    author_association: str
+    resolved: Optional[bool] = None
+    provider_label: str = "GitHub"
 
 
 @dataclass
@@ -47,14 +49,11 @@ class CommentThread:
     @property
     def is_resolved(self) -> bool:
         """
-        GitHub does not expose 'resolved' state in the REST API for individual
-        comments. We infer it: if the PR author (or anyone) has replied to the
-        thread, we consider it 'addressed'. Strictly unresolved means no replies
-        at all from any participant.
-
-        Note: The GraphQL API exposes `isResolved` directly, but we intentionally
-        avoid GraphQL to keep the gh-CLI dependency simple.
+        GitHub REST comments do not expose thread resolution, so we infer it
+        from replies. Bitbucket Cloud normalized comments set root.resolved.
         """
+        if self.root.resolved is not None:
+            return self.root.resolved
         return len(self.replies) > 0
 
 
@@ -86,7 +85,6 @@ def _build_threads(raw_comments: list[dict]) -> list[CommentThread]:
     Group flat list of raw review comment dicts into threaded CommentThread
     objects. Replies reference their parent via `in_reply_to_id`.
     """
-    by_id: dict[int, ReviewComment] = {}
     roots: list[ReviewComment] = []
     replies: dict[int, list[ReviewComment]] = {}  # parent_id -> [reply, ...]
 
@@ -103,8 +101,9 @@ def _build_threads(raw_comments: list[dict]) -> list[CommentThread]:
             in_reply_to_id=raw.get("in_reply_to_id"),
             is_suggestion=_is_suggestion(raw.get("body") or ""),
             author_association=raw.get("author_association", ""),
+            resolved=raw.get("resolved") if isinstance(raw.get("resolved"), bool) else None,
+            provider_label=raw.get("provider_label", "GitHub"),
         )
-        by_id[comment.id] = comment
 
         if comment.in_reply_to_id is None:
             roots.append(comment)
@@ -116,7 +115,7 @@ def _build_threads(raw_comments: list[dict]) -> list[CommentThread]:
         thread = CommentThread(root=root, replies=replies.get(root.id, []))
         threads.append(thread)
 
-    # Sort threads by file path then line number for a consistent reading order
+    # Sort threads by file path then line number for a consistent reading order.
     threads.sort(key=lambda t: (t.root.path, t.root.line or 0))
     return threads
 
@@ -127,9 +126,14 @@ def _build_threads(raw_comments: list[dict]) -> list[CommentThread]:
 
 def _render_comment_body(comment: ReviewComment, indent: str = "") -> str:
     lines = []
-    lines.append(f"{indent}**@{comment.author}** ({comment.author_association.lower()}) "
-                 f"· {comment.created_at[:10]}")
-    lines.append(f"{indent}[view on GitHub]({comment.html_url})")
+    association = (
+        f" ({comment.author_association.lower()})"
+        if comment.author_association
+        else ""
+    )
+    lines.append(f"{indent}**@{comment.author}**{association} - {comment.created_at[:10]}")
+    if comment.html_url:
+        lines.append(f"{indent}[view on {comment.provider_label}]({comment.html_url})")
     lines.append("")
     for line in comment.body.splitlines():
         lines.append(f"{indent}{line}")
@@ -141,22 +145,22 @@ def _render_thread(thread: CommentThread, index: int) -> str:
     root = thread.root
     status = "addressed" if thread.is_resolved else "**OPEN**"
 
-    parts.append(f"### Thread {index} — `{root.path}` (line {root.line}) [{status}]")
+    parts.append(f"### Thread {index} - `{root.path}` (line {root.line}) [{status}]")
     parts.append("")
 
-    # Diff context
     hunk_tail = _extract_diff_hunk_tail(root.diff_hunk)
-    parts.append("**Diff context:**")
-    parts.append("```diff")
-    parts.append(hunk_tail)
-    parts.append("```")
+    if hunk_tail:
+        parts.append("**Diff context:**")
+        parts.append("```diff")
+        parts.append(hunk_tail)
+        parts.append("```")
+    else:
+        parts.append("_No diff context available from the provider._")
     parts.append("")
 
-    # Root comment
     parts.append(_render_comment_body(root))
     parts.append("")
 
-    # Replies
     if thread.replies:
         parts.append("**Replies:**")
         parts.append("")
@@ -181,11 +185,11 @@ def format_pr(
     Parameters
     ----------
     pr_info        : Basic PR metadata.
-    review_comments: Inline diff comments (from /pulls/{n}/comments).
-    issue_comments : General PR comments (from /issues/{n}/comments).
-    reviews        : Review summaries (from /pulls/{n}/reviews).
-    filter_mode    : "all" keeps every thread; "unresolved" drops threads
-                     that already have at least one reply.
+    review_comments: Inline diff comments.
+    issue_comments : General PR comments.
+    reviews        : Review summaries.
+    filter_mode    : "all" keeps every thread; "unresolved" drops resolved
+                     threads.
     """
     threads = _build_threads(review_comments)
 
@@ -202,7 +206,7 @@ def format_pr(
     lines.append(f"- **Repository:** {pr_info.owner}/{pr_info.repo}")
     lines.append(f"- **Author:** @{pr_info.author}")
     lines.append(f"- **State:** {pr_info.state}")
-    lines.append(f"- **Branch:** `{pr_info.head_branch}` → `{pr_info.base_branch}`")
+    lines.append(f"- **Branch:** `{pr_info.head_branch}` -> `{pr_info.base_branch}`")
     lines.append(f"- **URL:** {pr_info.url}")
     lines.append(f"- **Filter:** {filter_mode}")
     lines.append("")
@@ -223,9 +227,10 @@ def format_pr(
             state = r.get("state", "")
             submitted = (r.get("submitted_at") or "")[:10]
             body = _clean_body(r.get("body") or "")
-            lines.append(f"- **@{reviewer}** — `{state}` ({submitted})")
+            lines.append(f"- **@{reviewer}** - `{state}` ({submitted})")
             if body:
-                lines.append(f"  > {body[:200]}{'…' if len(body) > 200 else ''}")
+                suffix = "..." if len(body) > 200 else ""
+                lines.append(f"  > {body[:200]}{suffix}")
         lines.append("")
 
     # -----------------------------------------------------------------------
@@ -244,13 +249,12 @@ def format_pr(
         )
         lines.append("")
 
-        # Group by file for easier navigation
         current_file = None
         thread_index = 1
         for thread in threads:
             if thread.root.path != current_file:
                 current_file = thread.root.path
-                lines.append(f"---")
+                lines.append("---")
                 lines.append(f"## File: `{current_file}`")
                 lines.append("")
             lines.append(_render_thread(thread, thread_index))
@@ -269,7 +273,9 @@ def format_pr(
             created = (c.get("created_at") or "")[:10]
             body = _clean_body(c.get("body") or "")
             html_url = c.get("html_url", "")
-            lines.append(f"**@{author}** ({association}) · {created} · [view]({html_url})")
+            association_text = f" ({association})" if association else ""
+            view_link = f" - [view on {pr_info.provider_label}]({html_url})" if html_url else ""
+            lines.append(f"**@{author}**{association_text} - {created}{view_link}")
             lines.append("")
             lines.append(body)
             lines.append("")
