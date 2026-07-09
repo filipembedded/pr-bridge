@@ -1,6 +1,6 @@
 # pr-bridge
 
-Version 1.0.0
+Version 1.1.0
 
 > Export GitHub and Bitbucket Cloud PR review comments to an AI-friendly Markdown file, so your AI coding assistant gets the full context without manual copy-paste.
 
